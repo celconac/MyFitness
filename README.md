@@ -18,3 +18,12 @@ The logged-in Google account's local profile is required; Drive sync follows nor
 - Routines: `https://celconac.github.io/MyFitness/?addRoutine=1&payload=ENCODED_JSON` with an object `{name:"Full Body",exercises:[{name:"Leg press",sets:3,reps:"10-12"}]}`.
 - Both links present a review confirmation, require an active account profile and do not overwrite unrelated data. A routine with the same name replaces that template only.
 - Long workout links may exceed messaging/app-link URL limits. Keep exercise descriptions short and split extensive plans if necessary.
+
+## Personalized food suggestions
+Nutrition now includes a “What should I eat?” meal selector and ChatGPT button. It passes the selected date, current user's food diary totals, daily targets and the remaining calorie/protein balance to ChatGPT. It only suggests meals; no data is saved unless the user confirms a separate one-tap Add Food link.
+
+
+## Nutrition layout + weekly calorie overview
+- Nutrition tab opens with selected day calories, protein, remaining goals, and food entries, followed by Food Coach and weekly/monthly navigation.
+- Overview now shows Monday-Sunday daily calorie totals alongside the existing weekly workout overview.
+- Existing account separation, one-tap imports, and Drive synchronization retained.

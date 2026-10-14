@@ -42,6 +42,19 @@ function render(){if(!Array.isArray(state.templates))state.templates=[];if(typeo
 const todayFoods=state.foods.filter(f=>f.date===dateToday());const sum=items=>({cal:items.reduce((s,f)=>s+num(f.calories),0),prot:items.reduce((s,f)=>s+num(f.protein),0)});
 let ov=sum(todayFoods);$('ovCalories').textContent=Math.round(ov.cal);$('ovProtein').textContent=`${ov.prot.toFixed(1)} g`;$('ovCalGoal').textContent=`Goal ${state.goals.calories} kcal`;$('ovProteinGoal').textContent=`Goal ${state.goals.protein} g`;
 const weights=[...state.weights].sort((a,b)=>a.date.localeCompare(b.date));const latest=weights.at(-1);$('ovWeight').textContent=latest?`${displayWeight(latest.kg).toFixed(1)} ${unit()}`:'—';$('ovWeightGoal').textContent=state.goals.weight?`Target ${displayWeight(state.goals.weight).toFixed(1)} ${unit()}`:'No target weight set';const weekStart=logIso(logMonday(dateToday()));const weekly=state.workouts.filter(w=>w.date>=weekStart&&w.date<=logShift(weekStart,6));const counted=[...new Set(weekly.filter(w=>w.status==='Done').map(w=>w.date))].length;const rested=[...new Set(weekly.filter(w=>w.status==='Rest').map(w=>w.date))].length;const planned=[...new Set(weekly.filter(w=>w.status==='Planned').map(w=>w.date))].length;$('ovSessions').textContent=`This week (${fmtDate(weekStart)} – ${fmtDate(logShift(weekStart,6))}): ${counted} training days · ${rested} rest days · ${planned} planned`;if($('weeklyTraining')){$('weeklyTraining').replaceChildren();for(let n=0;n<7;n++){const iso=logShift(weekStart,n),entries=weekly.filter(w=>w.date===iso),day=document.createElement('div');day.className='weekly-day';const label=txt('strong',new Date(iso+'T12:00:00').toLocaleDateString(undefined,{weekday:'short'}));const value=txt('span',entries.length?entries.some(w=>w.status==='Done')?'✓ Trained':entries.some(w=>w.status==='Rest')?'☾ Rest':entries.some(w=>w.status==='Planned')?'· Planned':'–':iso>dateToday()?'Upcoming':'—');const dayClass=entries.some(w=>w.status==='Done')?'trained':entries.some(w=>w.status==='Rest')?'rested':null;if(dayClass)day.classList.add(dayClass);day.append(label,value);$('weeklyTraining').append(day)}};
+if($('weeklyCalories')){
+ const root=$('weeklyCalories');root.replaceChildren();const goal=Number(state.goals.calories)||0;let totals=0,tracked=0;
+ for(let n=0;n<7;n++){
+   const iso=logShift(weekStart,n),entries=state.foods.filter(f=>f.date===iso),total=entries.reduce((acc,f)=>acc+num(f.calories),0),day=document.createElement('div');
+   day.className='weekly-day';
+   const dayName=txt('strong',new Date(iso+'T12:00:00').toLocaleDateString(undefined,{weekday:'short'}));
+   const amount=txt('span',entries.length?`${Math.round(total).toLocaleString()} kcal`:'—');amount.className='weekly-kcal';
+   const note=txt('small',entries.length?(goal?(total>goal?`+${Math.round(total-goal)} above`:`${Math.round(goal-total)} left`):'Logged'):iso>dateToday()?'Upcoming':'No food logged');note.className='weekly-sub';
+   if(entries.length){totals+=total;tracked++;day.classList.add(goal?(total>goal?'cal-over':total===goal?'cal-goal':'cal-under'):'cal-goal')}
+   day.append(dayName,amount,note);root.append(day);
+ }
+ const summary=$('ovCaloriesWeekSummary');if(summary)summary.textContent=tracked?`${Math.round(totals).toLocaleString()} kcal across ${tracked} logged day${tracked===1?'':'s'} · Daily target ${goal?goal.toLocaleString()+' kcal':'not set'}`:`No meals logged this week · Daily target ${goal?goal.toLocaleString()+' kcal':'not set'}`;
+}
 $('workoutRows').replaceChildren();
 for(let dayOffset=6;dayOffset>=0;dayOffset--){
  const date=logShift(logWeek.wlog,dayOffset);
@@ -80,6 +93,29 @@ $('deleteTemplate').onclick=()=>{const name=$('templatePicker').value;if(!state.
 function chatgptPrompt(task){const url='https://chatgpt.com/?q='+encodeURIComponent(task);window.open(url,'_blank','noopener,noreferrer')}
 $('chatgptRoutine').onclick=()=>chatgptPrompt('Help me create or modify a myFitness routine. Provide an Add to myFitness clickable link with this exact format: https://celconac.github.io/MyFitness/?addRoutine=1&payload=ENCODED_JSON . ENCODED_JSON is encodeURIComponent(JSON.stringify({name:"Full Body",exercises:[{name:"Leg press",sets:3,reps:"10-12"}]})). Include all agreed exercises. The user reviews and confirms before saving; never claim saved before confirmation. A matching routine name will replace its template after confirmation, without changing past workouts. Do not use Google Drive for this method.');
 $('chatgptFoodLink').onclick=()=>chatgptPrompt('Help me log food in myFitness for '+($('nDate').value||dateToday())+'. I will tell you what I ate or send a meal photo. Estimate calories and protein. Then give me a clickable Add to myFitness link using https://celconac.github.io/MyFitness/?addFood=1&date=YYYY-MM-DD&name=ENCODED_FOOD_DESCRIPTION&calories=NUMBER&protein=NUMBER&entryId=UNIQUE_ID . URL-encode the food name and use the date above. Do NOT claim you saved it: I must tap the link, review and confirm in myFitness. Do not use Google Drive for this method.');
+// Food coach uses the selected date and the CURRENT active profile only.
+// It creates suggestions, never edits the diary or talks to Google Drive directly.
+$('chatgptCoach').onclick=()=>{
+ const date=$('nDate').value||dateToday();
+ const meal=$('coachMeal').value;
+ const entries=state.foods.filter(f=>f.date===date);
+ const eatenCal=entries.reduce((n,f)=>n+num(f.calories),0);
+ const eatenProt=entries.reduce((n,f)=>n+num(f.protein),0);
+ const targetCal=num(state.goals.calories), targetProt=num(state.goals.protein);
+ const remainingCal=Math.round(targetCal-eatenCal);
+ const remainingProt=Math.round((targetProt-eatenProt)*10)/10;
+ const foods=entries.length?entries.map(f=>`${String(f.name).slice(0,110)} (${Math.round(num(f.calories))} kcal, ${num(f.protein)}g protein)`).join('; ').slice(0,2500):'Nothing logged yet';
+ const request=[
+  'Help me choose what to eat for '+meal+' on '+date+' using my actual myFitness stats below.',
+  'Daily goal: '+targetCal+' kcal and '+targetProt+' g protein.',
+  'Already eaten: '+Math.round(eatenCal)+' kcal and '+eatenProt.toFixed(1)+' g protein.',
+  'Remaining: '+remainingCal+' kcal and '+remainingProt+' g protein.',
+  'Food logged today: '+foods+'.',
+  'Give 3 realistic high-protein meal ideas with portion sizes and approximate calories and protein for each. Consider what I already ate and prioritize reaching protein while staying within the calorie goal if feasible. If my remaining calories are very low or negative, say so, avoid proposing an extreme restriction, and offer sensible alternatives. Ask dietary preferences only if needed.',
+  'If I choose and eat a meal, help me log it using the one-tap Add to myFitness link. Do not claim anything is saved until I review and confirm in the app.'
+ ].join('\n');
+ chatgptPrompt(request);
+};
 $('chatgptWorkout').onclick=()=>chatgptPrompt('Help me log a myFitness workout for '+($('routineDate').value||dateToday())+'. Ask for workout name, individual exercises, sets, reps and weights in kg. Then give a clickable Add to myFitness link with exactly this format: https://celconac.github.io/MyFitness/?addWorkout=1&payload=ENCODED_JSON . ENCODED_JSON is encodeURIComponent(JSON.stringify({date:"'+($('routineDate').value||dateToday())+'",name:"Chest + Biceps",status:"Done",exercises:[{name:"Incline press",sets:3,reps:"10",weight:20,done:true}]})). Replace all example data with my actual session. Rest days can have status Rest and no exercises. The user reviews before saving; do not claim a save until they confirm inside myFitness. Do not use Google Drive for this method.');
 function routineRender(){const target=$('routineChecklist');target.replaceChildren();if(!activeRoutine){target.append(txt('p','Choose a workout and click Load routine.'));return}if(activeRoutine.name==='Rest'){target.append(txt('p','Recovery day. No exercise checklist needed — save to record a rest day.'));return}activeRoutine.exercises.forEach((ex,i)=>{const row=document.createElement('div');row.className='card';row.style.padding='12px';row.style.marginBottom='8px';const header=document.createElement('div');header.className='buttonrow';const check=document.createElement('input');check.type='checkbox';check.checked=!!ex.done;check.style.cssText='width:23px;height:23px';check.onchange=()=>{ex.done=check.checked;routineRender()};header.append(check,txt('strong',`${i+1}. ${ex.name}`));const fields=document.createElement('div');fields.className='grid';for(const [label,key,type] of [['Sets','sets','number'],['Reps completed','reps','text'],['Weight (kg)','weight','number']]){const box=document.createElement('div');const input=document.createElement('input');input.type=type;if(type==='number')input.min='0';if(key==='weight')input.step='0.5';input.value=ex[key]??'';input.oninput=()=>{ex[key]=key==='sets'?Number(input.value):key==='weight'?(input.value===''?null:Number(input.value)):input.value};box.append(txt('label',label),input);fields.append(box)}row.append(header,fields);target.append(row)});const count=activeRoutine.exercises.filter(e=>e.done).length;target.append(txt('p',`${count} / ${activeRoutine.exercises.length} exercises ticked`))}
 refreshTemplates();chooseTemplate($('templatePicker').value);
