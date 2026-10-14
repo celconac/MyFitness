@@ -80,7 +80,13 @@ drawWeek('nlog');$('weightLatest').textContent=latest?`${displayWeight(latest.kg
 for(const [id,value] of [['profileName',state.profile.name],['weightUnit',unit()],['accent',state.profile.accent],['goalCal',state.goals.calories],['goalProt',state.goals.protein],['goalWeight',state.goals.weight?displayWeight(state.goals.weight).toFixed(1):''],['goalFat',state.goals.fat??''],['goalDate',state.goals.date]])if(document.activeElement!==$(id))$(id).value=value;
 // Workout suggestions field was removed from Settings; categories remain in saved data.
 }
-function makeDemoButton(name){const b=document.createElement('button');b.type='button';b.className='exercise-demo-btn';b.textContent='▶ Demo';b.setAttribute('aria-label','See demonstration for '+name);b.onclick=()=>window.myFitnessMedia?.open(name);return b;}
+function makeDemoButton(name){
+  const group=document.createElement('span');group.className='exercise-media-actions';
+  for(const [label,url] of [['▧ Pictures','https://www.google.com/search?tbm=isch&q='+encodeURIComponent(name+' exercise proper form')],['▶ Video','https://www.youtube.com/results?search_query='+encodeURIComponent(name+' exercise proper form tutorial')]]){
+    const a=document.createElement('a');a.className='exercise-demo-btn';a.textContent=label;a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.setAttribute('aria-label',label+' for '+name);group.append(a);
+  }
+  return group;
+}
 function refreshExerciseGallery(){window.myFitnessMedia?.refresh();}
 function templateList(){return [...new Map([...Object.entries(ROUTINES).map(([name,rows])=>[name,{name,exercises:rows.map(([name,sets,reps])=>({name,sets,reps}))}]),...state.templates.map(t=>[t.name,t])]).values()];}
 function refreshTemplates(){const templates=templateList(), current=$('routineSelect').value,edit=$('templatePicker').value;for(const id of ['routineSelect','templatePicker']){$(id).replaceChildren();for(const t of templates){const o=document.createElement('option');o.value=t.name;o.textContent=t.name;$(id).append(o)}}if(templates.some(t=>t.name===current))$('routineSelect').value=current;if(templates.some(t=>t.name===edit))$('templatePicker').value=edit;}

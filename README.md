@@ -35,3 +35,6 @@ On mobile, calories, protein, and weight stay side by side in a three-column row
 
 ## Exercise Library (new)
 Routine Library now includes a searchable exercise list sourced from built-in templates, custom templates and completed sessions. Workouts, Training History and template editors have ▶ Demo buttons. Demonstrations attempt an exact exercise-name match in the public wger exercise media API; when no trustworthy media match exists, the app shows video/image search links rather than incorrectly showing a different movement. Media requires internet and is not saved in personal fitness JSON. New one-tap ChatGPT routines automatically appear in the library. No API keys required. Media from wger has its own creator/licensing terms.
+
+## Pictures and Video buttons
+Each exercise in Workouts, Training History, and Routine Library now has separate Pictures and Video search links. Searches open in a new browser/app rather than using the unreliable demonstration popup. No exercise names or workout data are modified.
