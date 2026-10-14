@@ -16,3 +16,5 @@ Upload all files in this ZIP **into the repository root**, overwriting matching 
 
 ## Data
 Personal entries are not bundled. They are kept in the user's existing local / Google Drive data file. Each Google account must authorize the Google Drive connection separately; users in OAuth Testing may need to be added as test users. ChatGPT saving a routine directly to Google Drive is separate from this app's exercise editor.
+
+Routine Library is now a dedicated navigation tab; Workouts contains daily checklist, history, and session editor.
