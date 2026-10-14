@@ -18,3 +18,7 @@ Upload all files in this ZIP **into the repository root**, overwriting matching 
 Personal entries are not bundled. They are kept in the user's existing local / Google Drive data file. Each Google account must authorize the Google Drive connection separately; users in OAuth Testing may need to be added as test users. ChatGPT saving a routine directly to Google Drive is separate from this app's exercise editor.
 
 Routine Library is now a dedicated navigation tab; Workouts contains daily checklist, history, and session editor.
+
+## Separate Google accounts (v11)
+
+Connect Google in Settings before working with your saved data. The app first verifies the current Google Drive user and chooses a browser data store specific to that Google account; it does not share the previous user's data. Each Drive account uses its own `myFitness-data.json`. The previous single-browser data store is migrated only when its saved Google file ID matches the signed-in account's file. Disconnect hides the previous account's records without deleting them. Do not use a shared offline guest session for private entries. An authorized connection is required before the app loads or syncs your personal records. Changes to routines through ChatGPT still require a separate Google Drive authorization in ChatGPT.

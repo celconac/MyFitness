@@ -2,19 +2,61 @@
    Three-way merge + optimistic Drive version check. Conflicts pause sync. */
 'use strict';
 (()=>{
-const $=id=>document.getElementById(id), CLIENT_KEY='myfitness-google-client-id', SYNC_KEY='myfitness-sync-v1', FILE='myFitness-data.json';
+const $=id=>document.getElementById(id), CLIENT_KEY='myfitness-google-client-id', LEGACY_SYNC_KEY='myfitness-sync-v1', FILE='myFitness-data.json';
 const SCOPE='https://www.googleapis.com/auth/drive.file', deep=x=>JSON.parse(JSON.stringify(x));
-let token='', client=null, fileId=null, baseline=null, baseVersion=null, busy=false, stopped=false, timer=null, queued=false, reconnectNeeded=false;
+let token='', client=null, fileId=null, baseline=null, baseVersion=null, busy=false, stopped=false, timer=null, queued=false, reconnectNeeded=false, accountId=null, SYNC_KEY=null;
 const say=(s)=>{const el=$('gStatus');if(el)el.textContent=s;};
 const detail=(s)=>{const el=$('syncDetail');if(el)el.textContent=s;};
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-function cached(){try{return JSON.parse(localStorage.getItem(SYNC_KEY))}catch{return null}}
-function saveCache(){localStorage.setItem(SYNC_KEY,JSON.stringify({fileId,baseline,baseVersion}));}
-const old=cached();if(old){fileId=old.fileId||null;baseline=old.baseline||null;baseVersion=old.baseVersion||null;}
+function cached(){try{return SYNC_KEY?JSON.parse(localStorage.getItem(SYNC_KEY)):null}catch{return null}}
+function saveCache(){if(SYNC_KEY)localStorage.setItem(SYNC_KEY,JSON.stringify({fileId,baseline,baseVersion}));}
+const legacySync=(()=>{try{return JSON.parse(localStorage.getItem(LEGACY_SYNC_KEY))}catch{return null}})();
 $('gClientId').value=localStorage.getItem(CLIENT_KEY)||'';
 function getClientId(){const id=$('gClientId').value.trim();if(!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(id))throw Error('Enter a valid Google OAuth client ID');localStorage.setItem(CLIENT_KEY,id);return id;}
 function online(){return navigator.onLine;}
-function oauth(){if(!window.google?.accounts?.oauth2)throw Error('Google sign-in needs an internet connection');return google.accounts.oauth2.initTokenClient({client_id:getClientId(),scope:SCOPE,callback:r=>{if(r.error){say('Google sign-in failed: '+r.error);return;}token=r.access_token;reconnectNeeded=false;stopped=false;say('Connected. Syncing Google Drive...');sync().catch(fail);}});}
+async function identifyAccount(){
+ const response=await request('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)');
+ const info=(await response.json()).user||{};
+ const identity=String(info.permissionId||info.emailAddress||'').trim();
+ if(!identity)throw Error('Cannot identify this Google account. Sync is blocked to protect your records.');
+ return {identity,email:info.emailAddress||'Google account'};
+}
+async function activateAccount(){
+ // Never use the previous person's unsaved session against the new Google account.
+ const {identity,email}=await identifyAccount();
+ const newKey='myfitness-account-'+encodeURIComponent(identity)+'-v2';
+ const newSyncKey='myfitness-sync-account-'+encodeURIComponent(identity)+'-v2';
+ const previousKey=KEY;
+ if(accountId&&accountId!==identity){localStorage.setItem(KEY,JSON.stringify(state));}
+ const stored=(()=>{try{return JSON.parse(localStorage.getItem(newKey))}catch{return null}})();
+ const savedSync=(()=>{try{return JSON.parse(localStorage.getItem(newSyncKey))}catch{return null}})();
+ const listed=await findFileForAccount(savedSync?.fileId);
+ // Legacy migration only when the original file ID matches THIS Google Drive file.
+ const legacyMatch=!stored&&legacySync?.fileId&&listed?.id===legacySync.fileId;
+ let chosen=valid(stored)?stored:null;
+ let cachedSync=savedSync;
+ if(!chosen&&legacyMatch){
+  try{const legacy=JSON.parse(localStorage.getItem('myfitness-v2'));if(valid(legacy))chosen=legacy;}catch{}
+  cachedSync=legacySync;
+ }
+ if(!chosen&&listed)chosen=await download(listed.id);
+ if(!chosen)chosen=fresh();
+ accountId=identity;KEY=newKey;SYNC_KEY=newSyncKey;
+ state=deep(chosen);fileId=listed?.id||null;
+ baseline=cachedSync?.baseline||null;baseVersion=cachedSync?.baseVersion||null;
+ if(!fileId||cachedSync?.fileId!==fileId){baseline=fileId?deep(chosen):null;baseVersion=listed?.version||null;}
+ localStorage.setItem(KEY,JSON.stringify(state));saveCache();render();
+ say('Connected as '+email+'.');detail('This account has its own local data and Google Drive file.');
+}
+async function findFileForAccount(knownId){
+ const q=`name = '${FILE}' and mimeType = 'application/json' and trashed = false`;
+ const res=await request('https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({q,fields:'nextPageToken,files(id,name,modifiedTime,version)',pageSize:'1000'}));
+ const files=(await res.json()).files||[];
+ if(knownId){const match=files.find(f=>f.id===knownId);if(!match&&files.length)throw Error('Saved file not accessible under this account. No changes made.');if(match)return match;}
+ if(files.length>1)throw Error('Multiple myFitness-data.json files in this account. Resolve duplicates before syncing.');
+ return files[0]||null;
+}
+function oauth(){if(!window.google?.accounts?.oauth2)throw Error('Google sign-in needs an internet connection');return google.accounts.oauth2.initTokenClient({client_id:getClientId(),scope:SCOPE,callback:r=>{if(r.error){fail(Error('Google sign-in failed: '+r.error));return;}token=r.access_token;reconnectNeeded=false;stopped=false;say('Verifying Google account...');activateAccount().then(()=>sync()).catch(e=>{token='';accountId=null;fail(e)});}});}
 function connect(){client=oauth();client.requestAccessToken({prompt:'consent'});}
 function fail(err){say('Sync paused: '+err.message);detail('Local data is safe. Check the connection or click Connect Google.');}
 async function request(url,options={}){
@@ -23,13 +65,7 @@ async function request(url,options={}){
  if(r.status===401||r.status===403){token='';reconnectNeeded=true;throw Error('Google authorization expired. Click Connect Google again.');}
  if(!r.ok)throw Error('Drive HTTP '+r.status+': '+(await r.text()).slice(0,140));return r;
 }
-async function findFile(){
- const q=`name = '${FILE}' and mimeType = 'application/json' and trashed = false`;
- const res=await request('https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({q,fields:'nextPageToken,files(id,name,modifiedTime,version)',pageSize:'1000'}));
- const files=(await res.json()).files||[];
- if(files.length>1&&!fileId)throw Error('Multiple myFitness files found. Choose the original file in Drive before syncing.');
- return files.find(x=>x.id===fileId)||files.sort((a,b)=>b.modifiedTime.localeCompare(a.modifiedTime))[0]||null;
-}
+async function findFile(){if(!accountId)throw Error('Connect Google and verify your account first.');return findFileForAccount(fileId);}
 async function download(id){const response=await request('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?alt=media');const d=await response.json();if(!valid(d))throw Error('Google file format invalid; no changes made.');return d;}
 const keyers={foods:x=>String(x.id??(x.date+'|'+x.name)),weights:x=>x.date,workouts:x=>x.date+'|'+x.name,templates:x=>x.name};
 function merge(base,local,remote){
@@ -64,12 +100,12 @@ async function upload(data,expectedVersion){
 }
 async function create(data){const boundary='myfit'+Date.now();const payload='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify({name:FILE,mimeType:'application/json'})+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+JSON.stringify(data)+'\r\n--'+boundary+'--';const r=await request('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,version',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body:payload});return r.json();}
 async function sync(){
- if(busy){queued=true;return;}if(!online()){say('Offline — changes saved on this device; waiting to sync.');return;}if(!token){if(!reconnectNeeded)say('Connect Google once to enable automatic sync.');return;}
+ if(busy){queued=true;return;}if(!online()){say('Offline — changes saved on this device; waiting to sync.');return;}if(!token||!accountId){if(!reconnectNeeded)say('Connect Google to verify your account and enable sync.');return;}
  busy=true;try{
   const f=await findFile();let remote,version;
   if(f){fileId=f.id;remote=await download(fileId);version=f.version;}
   else{if(fileId)throw Error('Previously connected Drive file is not visible to this Google login. Confirm the correct account and Drive authorization; no replacement was created.');const created=await create(state);fileId=created.id;baseline=deep(state);baseVersion=created.version;saveCache();say('Google Drive file created and synced.');return;}
-  if(baseline&&fileId!==old?.fileId){baseline=null;baseVersion=null;}
+
   const result=merge(baseline,state,remote);
   if(result.conflicts.length){stopped=true;backupConflict({local:state,remote,baseline,conflicts:result.conflicts});throw Error('Conflicting edits detected ('+result.conflicts.slice(0,3).join(', ')+'). A backup was downloaded. Sync paused; resolve differences before continuing.');}
   if(!equal(result.merged,remote)){
@@ -81,15 +117,15 @@ async function sync(){
  }finally{busy=false;if(queued&&!stopped){queued=false;setTimeout(()=>sync().catch(fail),500)}}
 }
 let debounce;
-window.addEventListener('myfitness:changed',()=>{clearTimeout(debounce);debounce=setTimeout(()=>sync().catch(fail),1100);});
+window.addEventListener('myfitness:changed',()=>{if(!accountId)return;clearTimeout(debounce);debounce=setTimeout(()=>sync().catch(fail),1100);});
 window.addEventListener('online',()=>sync().catch(fail));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync().catch(fail)});
 $('gSignIn').onclick=()=>{try{connect()}catch(e){fail(e)}};
-$('gSignOut').onclick=()=>{if(token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(token,()=>{});token='';say('Disconnected. Offline data remains on this device.');};
+$('gSignOut').onclick=()=>{if(token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(token,()=>{});if(accountId)localStorage.setItem(KEY,JSON.stringify(state));token='';accountId=null;fileId=null;baseline=null;baseVersion=null;SYNC_KEY=null;KEY='myfitness-guest-v2';state=fresh();render();say('Disconnected. Account data remains saved separately on this device.');detail('Connect your Google account to view your private records.');};
 $('gUpload').onclick=()=>sync().catch(fail);
 $('gDownload').onclick=async()=>{
  if(busy){say('Sync in progress — please wait.');return;}
- if(!token){say('Connect Google first.');return;}
+ if(!token||!accountId){say('Connect Google first.');return;}
  if(!online()){say('Offline — reconnect before loading.');return;}
  busy=true;
  try{
@@ -111,5 +147,5 @@ $('gDownload').onclick=async()=>{
 timer=setInterval(()=>{if(!document.hidden&&!stopped)sync().catch(fail)},30000);
 // Browser security prevents silently opening a Google consent popup at startup.
 // If the token is still held in the same tab, all subsequent loads are automatic.
-say('Auto-sync ready. Click Connect Google to authorize this session.');
+say('Not connected. Connect Google to load your personal data.');
 })();
