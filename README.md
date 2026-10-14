@@ -31,3 +31,7 @@ Nutrition now includes a “What should I eat?” meal selector and ChatGPT butt
 
 ## Compact Overview update
 On mobile, calories, protein, and weight stay side by side in a three-column row. The seven-day calorie and workout grids are both more compact and readable. No change to stored fitness data or authentication.
+
+
+## Exercise Library (new)
+Routine Library now includes a searchable exercise list sourced from built-in templates, custom templates and completed sessions. Workouts, Training History and template editors have ▶ Demo buttons. Demonstrations attempt an exact exercise-name match in the public wger exercise media API; when no trustworthy media match exists, the app shows video/image search links rather than incorrectly showing a different movement. Media requires internet and is not saved in personal fitness JSON. New one-tap ChatGPT routines automatically appear in the library. No API keys required. Media from wger has its own creator/licensing terms.
