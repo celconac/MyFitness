@@ -27,3 +27,7 @@ Nutrition now includes a “What should I eat?” meal selector and ChatGPT butt
 - Nutrition tab opens with selected day calories, protein, remaining goals, and food entries, followed by Food Coach and weekly/monthly navigation.
 - Overview now shows Monday-Sunday daily calorie totals alongside the existing weekly workout overview.
 - Existing account separation, one-tap imports, and Drive synchronization retained.
+
+
+## Compact Overview update
+On mobile, calories, protein, and weight stay side by side in a three-column row. The seven-day calorie and workout grids are both more compact and readable. No change to stored fitness data or authentication.
