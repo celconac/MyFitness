@@ -1,8 +1,8 @@
-/* myFitness Google Drive auto-sync. No credentials stored, only OAuth client ID.
+/* myFitness Google Drive auto-sync. Public OAuth client ID is preconfigured.
    Three-way merge + optimistic Drive version check. Conflicts pause sync. */
 'use strict';
 (()=>{
-const $=id=>document.getElementById(id), CLIENT_KEY='myfitness-google-client-id', LEGACY_SYNC_KEY='myfitness-sync-v1', FILE='myFitness-data.json';
+const $=id=>document.getElementById(id), GOOGLE_CLIENT_ID='386983355308-1luumhktuisb04elgoa13hdcniq4f3os.apps.googleusercontent.com', LEGACY_SYNC_KEY='myfitness-sync-v1', FILE='myFitness-data.json';
 const SCOPE='https://www.googleapis.com/auth/drive.file', deep=x=>JSON.parse(JSON.stringify(x));
 let token='', client=null, fileId=null, baseline=null, baseVersion=null, busy=false, stopped=false, timer=null, queued=false, reconnectNeeded=false, accountId=null, SYNC_KEY=null;
 const say=(s)=>{const el=$('gStatus');if(el)el.textContent=s;};
@@ -11,8 +11,7 @@ const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function cached(){try{return SYNC_KEY?JSON.parse(localStorage.getItem(SYNC_KEY)):null}catch{return null}}
 function saveCache(){if(SYNC_KEY)localStorage.setItem(SYNC_KEY,JSON.stringify({fileId,baseline,baseVersion}));}
 const legacySync=(()=>{try{return JSON.parse(localStorage.getItem(LEGACY_SYNC_KEY))}catch{return null}})();
-$('gClientId').value=localStorage.getItem(CLIENT_KEY)||'';
-function getClientId(){const id=$('gClientId').value.trim();if(!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(id))throw Error('Enter a valid Google OAuth client ID');localStorage.setItem(CLIENT_KEY,id);return id;}
+function getClientId(){return GOOGLE_CLIENT_ID;}
 function online(){return navigator.onLine;}
 async function identifyAccount(){
  const response=await request('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)');
@@ -42,6 +41,7 @@ async function activateAccount(){
  if(!chosen&&listed)chosen=await download(listed.id);
  if(!chosen)chosen=fresh();
  accountId=identity;KEY=newKey;SYNC_KEY=newSyncKey;
+ localStorage.setItem('myfitness-last-active-account-v2',newKey);
  state=deep(chosen);fileId=listed?.id||null;
  baseline=cachedSync?.baseline||null;baseVersion=cachedSync?.baseVersion||null;
  if(!fileId||cachedSync?.fileId!==fileId){baseline=fileId?deep(chosen):null;baseVersion=listed?.version||null;}
@@ -121,7 +121,7 @@ window.addEventListener('myfitness:changed',()=>{if(!accountId)return;clearTimeo
 window.addEventListener('online',()=>sync().catch(fail));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync().catch(fail)});
 $('gSignIn').onclick=()=>{try{connect()}catch(e){fail(e)}};
-$('gSignOut').onclick=()=>{if(token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(token,()=>{});if(accountId)localStorage.setItem(KEY,JSON.stringify(state));token='';accountId=null;fileId=null;baseline=null;baseVersion=null;SYNC_KEY=null;KEY='myfitness-guest-v2';state=fresh();render();say('Disconnected. Account data remains saved separately on this device.');detail('Connect your Google account to view your private records.');};
+$('gSignOut').onclick=()=>{if(token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(token,()=>{});if(accountId)localStorage.setItem(KEY,JSON.stringify(state));token='';accountId=null;fileId=null;baseline=null;baseVersion=null;SYNC_KEY=null;KEY='myfitness-guest-v2';localStorage.removeItem('myfitness-last-active-account-v2');state=fresh();render();say('Disconnected. Account data remains saved separately on this device.');detail('Connect your Google account to view your private records.');};
 $('gUpload').onclick=()=>sync().catch(fail);
 $('gDownload').onclick=async()=>{
  if(busy){say('Sync in progress — please wait.');return;}
@@ -147,5 +147,6 @@ $('gDownload').onclick=async()=>{
 timer=setInterval(()=>{if(!document.hidden&&!stopped)sync().catch(fail)},30000);
 // Browser security prevents silently opening a Google consent popup at startup.
 // If the token is still held in the same tab, all subsequent loads are automatic.
-say('Not connected. Connect Google to load your personal data.');
+say(savedAccountKey?'Saved data restored on this device. Connect Google to resume syncing.':'Not connected. Connect Google to load your personal data.');
+if(savedAccountKey)detail('Your saved workouts, meals and goals are available offline. Drive sync resumes only after Google sign-in.');
 })();
