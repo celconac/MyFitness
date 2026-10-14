@@ -5,8 +5,8 @@
 const $=id=>document.getElementById(id), CLIENT_KEY='myfitness-google-client-id', SYNC_KEY='myfitness-sync-v1', FILE='myFitness-data.json';
 const SCOPE='https://www.googleapis.com/auth/drive.file', deep=x=>JSON.parse(JSON.stringify(x));
 let token='', client=null, fileId=null, baseline=null, baseVersion=null, busy=false, stopped=false, timer=null, queued=false, reconnectNeeded=false;
-const say=(s)=>{$('gStatus').textContent=s;};
-const detail=(s)=>{$('syncDetail').textContent=s;};
+const say=(s)=>{const el=$('gStatus');if(el)el.textContent=s;};
+const detail=(s)=>{const el=$('syncDetail');if(el)el.textContent=s;};
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function cached(){try{return JSON.parse(localStorage.getItem(SYNC_KEY))}catch{return null}}
 function saveCache(){localStorage.setItem(SYNC_KEY,JSON.stringify({fileId,baseline,baseVersion}));}
@@ -68,7 +68,7 @@ async function sync(){
  busy=true;try{
   const f=await findFile();let remote,version;
   if(f){fileId=f.id;remote=await download(fileId);version=f.version;}
-  else{if(fileId)throw Error('Previously connected Drive file is missing; not creating a replacement automatically.');const created=await create(state);fileId=created.id;baseline=deep(state);baseVersion=created.version;saveCache();say('Google Drive file created and synced.');return;}
+  else{if(fileId)throw Error('Previously connected Drive file is not visible to this Google login. Confirm the correct account and Drive authorization; no replacement was created.');const created=await create(state);fileId=created.id;baseline=deep(state);baseVersion=created.version;saveCache();say('Google Drive file created and synced.');return;}
   if(baseline&&fileId!==old?.fileId){baseline=null;baseVersion=null;}
   const result=merge(baseline,state,remote);
   if(result.conflicts.length){stopped=true;backupConflict({local:state,remote,baseline,conflicts:result.conflicts});throw Error('Conflicting edits detected ('+result.conflicts.slice(0,3).join(', ')+'). A backup was downloaded. Sync paused; resolve differences before continuing.');}
@@ -76,7 +76,7 @@ async function sync(){
    try{version=await upload(result.merged,version);}catch(e){if(e.message.includes('Drive changed while saving')){queued=true;return;}throw e;}
   }
   const locallyChanged=!equal(state,result.merged);state=deep(result.merged);baseline=deep(result.merged);baseVersion=version;saveCache();
-  localStorage.setItem(KEY,JSON.stringify(state));if(locallyChanged)render();
+  localStorage.setItem(KEY,JSON.stringify(state));if(locallyChanged){try{render()}catch(e){console.error('myFitness view render:',e);detail('Data loaded, but the screen could not refresh. Please reload this page.')}}
   say('Synced with Google Drive.');detail('Automatic save/load on · Checks every 30 seconds · Offline edits are queued.');
  }finally{busy=false;if(queued&&!stopped){queued=false;setTimeout(()=>sync().catch(fail),500)}}
 }
@@ -87,7 +87,27 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync().cat
 $('gSignIn').onclick=()=>{try{connect()}catch(e){fail(e)}};
 $('gSignOut').onclick=()=>{if(token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(token,()=>{});token='';say('Disconnected. Offline data remains on this device.');};
 $('gUpload').onclick=()=>sync().catch(fail);
-$('gDownload').onclick=()=>sync().catch(fail);
+$('gDownload').onclick=async()=>{
+ if(busy){say('Sync in progress — please wait.');return;}
+ if(!token){say('Connect Google first.');return;}
+ if(!online()){say('Offline — reconnect before loading.');return;}
+ busy=true;
+ try{
+  say('Loading from Google Drive...');
+  const f=await findFile();
+  if(!f)throw Error('No myFitness-data.json found in the connected Google Drive account. Check that you connected the same Google account.');
+  const remote=await download(f.id);
+  const localHasData=state.workouts.length||state.foods.length||state.weights.length||state.templates?.length;
+  if(localHasData&&!equal(state,remote)){
+   if(!confirm('Load from Google Drive? This replaces this browser’s current entries with your Google Drive copy. Choose Cancel if you have unsynced changes.')){say('Load cancelled. Local data unchanged.');return;}
+   backupConflict({local:state,reason:'Backup before loading Google Drive'});
+  }
+  fileId=f.id;state=deep(remote);baseline=deep(remote);baseVersion=f.version;stopped=false;queued=false;saveCache();
+  localStorage.setItem(KEY,JSON.stringify(state));
+  try{render()}catch(e){console.error('myFitness view render:',e);throw Error('Drive data downloaded, but your app view failed to refresh. Reload the page to see the saved records. '+e.message)}
+  say('Loaded your Google Drive data successfully.');detail('Workout routines, food, weights and goals are now loaded.');
+ }catch(e){fail(e)}finally{busy=false;}
+};
 timer=setInterval(()=>{if(!document.hidden&&!stopped)sync().catch(fail)},30000);
 // Browser security prevents silently opening a Google consent popup at startup.
 // If the token is still held in the same tab, all subsequent loads are automatic.
