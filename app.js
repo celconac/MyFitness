@@ -78,9 +78,9 @@ function saveTemplate(t,oldName=null){if(!t.name||!Array.isArray(t.exercises)||!
 $('templateSave').onclick=()=>{try{saveTemplate({name:$('templateName').value,exercises:templateDraft},selectedTemplateName)}catch(e){alert(e.message)}};
 $('deleteTemplate').onclick=()=>{const name=$('templatePicker').value;if(!state.templates.some(x=>x.name===name))return alert('Built-in routine cannot be removed, but you can replace it with your own version.');if(!confirm('Delete the saved template '+name+'? Logged workouts will remain.'))return;state.templates=state.templates.filter(t=>t.name!==name);persist();refreshTemplates();$('templateMessage').textContent='Template deleted; workout history preserved.'};
 function chatgptPrompt(task){const url='https://chatgpt.com/?q='+encodeURIComponent(task);window.open(url,'_blank','noopener,noreferrer')}
-$('chatgptRoutine').onclick=()=>chatgptPrompt('Help me create or modify a myFitness exercise routine. Ask about my training goals, experience and equipment as needed. Return a JSON object suitable for myFitness Routine Library import, with name and exercises array of objects containing name, sets and reps. Do not claim it has been saved unless you actually update my connected myFitness data.');
-$('chatgptFoodLink').onclick=()=>chatgptPrompt('Help me log food in myFitness for '+($('nDate').value||dateToday())+'. I will tell you what I ate or send a meal photo. Estimate calories and protein, and save the food entries to my connected myFitness Google Drive file if authorized. Confirm only after the update succeeds.');
-$('chatgptWorkout').onclick=()=>chatgptPrompt('Help me record my workout in myFitness for '+($('routineDate').value||dateToday())+'. Ask me what I trained and what exercises, sets, reps and weights I completed. Save the workout to my connected myFitness Google Drive file if that connection is available, and confirm only after successful saving.');
+$('chatgptRoutine').onclick=()=>chatgptPrompt('Help me create or modify a myFitness routine. Provide an Add to myFitness clickable link with this exact format: https://celconac.github.io/MyFitness/?addRoutine=1&payload=ENCODED_JSON . ENCODED_JSON is encodeURIComponent(JSON.stringify({name:"Full Body",exercises:[{name:"Leg press",sets:3,reps:"10-12"}]})). Include all agreed exercises. The user reviews and confirms before saving; never claim saved before confirmation. A matching routine name will replace its template after confirmation, without changing past workouts. Do not use Google Drive for this method.');
+$('chatgptFoodLink').onclick=()=>chatgptPrompt('Help me log food in myFitness for '+($('nDate').value||dateToday())+'. I will tell you what I ate or send a meal photo. Estimate calories and protein. Then give me a clickable Add to myFitness link using https://celconac.github.io/MyFitness/?addFood=1&date=YYYY-MM-DD&name=ENCODED_FOOD_DESCRIPTION&calories=NUMBER&protein=NUMBER&entryId=UNIQUE_ID . URL-encode the food name and use the date above. Do NOT claim you saved it: I must tap the link, review and confirm in myFitness. Do not use Google Drive for this method.');
+$('chatgptWorkout').onclick=()=>chatgptPrompt('Help me log a myFitness workout for '+($('routineDate').value||dateToday())+'. Ask for workout name, individual exercises, sets, reps and weights in kg. Then give a clickable Add to myFitness link with exactly this format: https://celconac.github.io/MyFitness/?addWorkout=1&payload=ENCODED_JSON . ENCODED_JSON is encodeURIComponent(JSON.stringify({date:"'+($('routineDate').value||dateToday())+'",name:"Chest + Biceps",status:"Done",exercises:[{name:"Incline press",sets:3,reps:"10",weight:20,done:true}]})). Replace all example data with my actual session. Rest days can have status Rest and no exercises. The user reviews before saving; do not claim a save until they confirm inside myFitness. Do not use Google Drive for this method.');
 function routineRender(){const target=$('routineChecklist');target.replaceChildren();if(!activeRoutine){target.append(txt('p','Choose a workout and click Load routine.'));return}if(activeRoutine.name==='Rest'){target.append(txt('p','Recovery day. No exercise checklist needed — save to record a rest day.'));return}activeRoutine.exercises.forEach((ex,i)=>{const row=document.createElement('div');row.className='card';row.style.padding='12px';row.style.marginBottom='8px';const header=document.createElement('div');header.className='buttonrow';const check=document.createElement('input');check.type='checkbox';check.checked=!!ex.done;check.style.cssText='width:23px;height:23px';check.onchange=()=>{ex.done=check.checked;routineRender()};header.append(check,txt('strong',`${i+1}. ${ex.name}`));const fields=document.createElement('div');fields.className='grid';for(const [label,key,type] of [['Sets','sets','number'],['Reps completed','reps','text'],['Weight (kg)','weight','number']]){const box=document.createElement('div');const input=document.createElement('input');input.type=type;if(type==='number')input.min='0';if(key==='weight')input.step='0.5';input.value=ex[key]??'';input.oninput=()=>{ex[key]=key==='sets'?Number(input.value):key==='weight'?(input.value===''?null:Number(input.value)):input.value};box.append(txt('label',label),input);fields.append(box)}row.append(header,fields);target.append(row)});const count=activeRoutine.exercises.filter(e=>e.done).length;target.append(txt('p',`${count} / ${activeRoutine.exercises.length} exercises ticked`))}
 refreshTemplates();chooseTemplate($('templatePicker').value);
 $('startRoutine').onclick=()=>{const date=$('routineDate').value,name=$('routineSelect').value;if(!date)return alert('Choose a date');const template=templateList().find(t=>t.name===name);if(!template)return alert('Choose a routine');const existing=state.workouts.find(w=>w.date===date&&w.name===name&&w.exercises?.length);activeRoutine={date,name,exercises:existing?existing.exercises.map(e=>({...e})):template.exercises.map(e=>({...e,weight:null,done:false}))};$('routineStatus').textContent=name==='Rest'?'Rest day ready — press Save rest day to add it to your workout log.':existing?'Loaded saved workout. Edit your sets, reps and weights.':'Enter sets, reps and weights, tick exercises, then save.';$('saveRoutine').textContent=name==='Rest'?'Save rest day':"Save today's checklist";routineRender()};
@@ -105,4 +105,103 @@ $('exportCSV').onclick=()=>{const q=v=>'"'+String(v).replaceAll('"','""')+'"';do
 $('importBackup').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());if(!valid(data))throw Error('This is not a myFitness v2 backup');if(confirm('Replace all current data with this backup?')){state=data;persist();$('status').textContent='Backup imported'}}catch(err){alert('Could not import: '+err.message)}e.target.value=''};
 $('resetAll').onclick=()=>{if(confirm('Erase ALL your local myFitness entries and settings? This cannot be undone unless you have a backup.')){state=fresh();persist();$('status').textContent='Started fresh'}};
 $('loadExample').onclick=()=>{if(confirm('Replace your current profile and logs with the original fitness history?')){state=example();persist();$('status').textContent='Original fitness history loaded'}};
-renderExercises();render();if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+// One-tap ChatGPT food import: query parameters are untrusted, so validate and
+// require explicit confirmation. Never automatically write data from a link.
+function oneTapFoodImport(){
+ const url=new URL(window.location.href),params=url.searchParams;
+ if(params.get('addFood')!=='1')return;
+ const clear=()=>{for(const k of ['addFood','date','name','calories','protein','entryId'])params.delete(k);history.replaceState(null,'',url.pathname+(params.toString()?'?'+params:'')+url.hash)};
+ const date=params.get('date')||'', name=(params.get('name')||'').trim();
+ const cal=Number(params.get('calories')), protein=Number(params.get('protein'));
+ const entryId=(params.get('entryId')||'').trim();
+ const validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(new Date(date+'T12:00:00').getTime())&&new Date(date+'T12:00:00').toISOString().slice(0,10)===date;
+ if(!validDate||!name||name.length>180||!Number.isFinite(cal)||cal<0||cal>10000||!Number.isFinite(protein)||protein<0||protein>1000||entryId.length>120){clear();alert('Invalid food link. Nothing has been saved.');return;}
+ // Do not save into an anonymous profile that may later belong to somebody else.
+ if(!/^myfitness-account-.+-v2$/.test(KEY)){
+  alert('Connect your own Google account in myFitness Settings first, then open this food link again. Nothing was saved.');return;
+ }
+ const matching=state.foods.find(f=>f.id===entryId&&entryId)||state.foods.find(f=>f.date===date&&f.name.trim().toLowerCase()===name.toLowerCase()&&Number(f.calories)===cal&&Number(f.protein)===protein);
+ if(matching){clear();$('nDate').value=date;logWeek.nlog=logIso(logMonday(date));$('nlogMonth').value=date.slice(0,7);jump('nutrition');render();alert('This food is already in your diary. No duplicate was added.');return;}
+ const overlay=document.createElement('div');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Review food entry');overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,38,.68);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+ const panel=document.createElement('div');panel.style.cssText='width:min(100%,430px);background:white;color:#162238;border-radius:20px;padding:24px;box-shadow:0 24px 64px #0005';
+ const h=txt('h2','Add food to myFitness?'),intro=txt('p',fmtDate(date));intro.style.color='#64748b';
+ const food=txt('p',name);food.style.cssText='font-size:19px;font-weight:700;margin:18px 0 8px';
+ const macros=txt('p',`${cal} kcal · ${protein} g protein`);macros.style.cssText='font-size:17px;margin:8px 0 22px';
+ const message=txt('p','Saves to your current profile and syncs with Google Drive when connected.');message.style.cssText='color:#64748b;font-size:13px';
+ const row=document.createElement('div');row.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-top:18px';
+ const cancel=txt('button','Cancel');cancel.className='btn secondary';
+ const accept=txt('button','Add to food diary');accept.className='btn';
+ const close=()=>{overlay.remove();clear()};cancel.onclick=close;
+ accept.onclick=()=>{
+  // Repeat duplicate check immediately before mutation.
+  const dupe=state.foods.some(f=>(entryId&&f.id===entryId)||(f.date===date&&f.name.trim().toLowerCase()===name.toLowerCase()&&Number(f.calories)===cal&&Number(f.protein)===protein));
+  if(dupe){close();alert('Already saved. No duplicate added.');return;}
+  state.foods.push({id:entryId||'chatgpt-'+date+'-'+Date.now(),date,name,calories:cal,protein});
+  $('nDate').value=date;logWeek.nlog=logIso(logMonday(date));$('nlogMonth').value=date.slice(0,7);
+  close();jump('nutrition');persist();
+ };
+ row.append(cancel,accept);panel.append(h,intro,food,macros,message,row);overlay.append(panel);document.body.append(overlay);accept.focus();
+}
+
+
+// One-tap workout/routine imports use encoded JSON only as proposed data.
+// Validation, active-account checks and explicit review are mandatory.
+function oneTapTrainingImport(){
+ const url=new URL(location.href),p=url.searchParams;
+ const kind=p.get('addWorkout')==='1'?'workout':p.get('addRoutine')==='1'?'routine':null;
+ if(!kind)return;
+ const clear=()=>{['addWorkout','addRoutine','payload'].forEach(k=>p.delete(k));history.replaceState(null,'',url.pathname+(p.toString()?'?'+p:'')+url.hash)};
+ let data;
+ try{
+  const raw=p.get('payload')||'';
+  if(!raw||raw.length>12000)throw Error('Link is missing data or too long');
+  data=JSON.parse(raw);
+  if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Invalid entry');
+  if(typeof data.name!=='string'||!data.name.trim()||data.name.length>80)throw Error('Invalid name');
+  if(!Array.isArray(data.exercises)||data.exercises.length>50)throw Error('Too many exercises');
+  const rest=kind==='workout'&&(data.status==='Rest'||data.name.toLowerCase()==='rest');
+  if(!rest&&!data.exercises.length)throw Error('No exercises included');
+  data.exercises=data.exercises.map(e=>{
+   if(!e||typeof e.name!=='string'||!e.name.trim()||e.name.length>100||!Number.isInteger(Number(e.sets))||Number(e.sets)<1||Number(e.sets)>30||!String(e.reps??'').trim()||String(e.reps).length>50)throw Error('Invalid exercise');
+   const weight=e.weight===null||e.weight===undefined||e.weight===''?null:Number(e.weight);
+   if(kind==='workout'&&weight!==null&&(!Number.isFinite(weight)||weight<0||weight>1000))throw Error('Invalid weight');
+   return {name:e.name.trim(),sets:Number(e.sets),reps:String(e.reps).trim(),...(kind==='workout'?{weight,done:e.done===true}:{})};
+  });
+  data.name=data.name.trim();
+  if(kind==='workout'){
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(data.date||'')||Number.isNaN(Date.parse(data.date+'T12:00:00'))||new Date(data.date+'T12:00:00').toISOString().slice(0,10)!==data.date)throw Error('Invalid workout date');
+   if(!['Done','Planned','Skipped','Rest'].includes(data.status))throw Error('Invalid workout status');
+   if(rest){data.status='Rest';data.exercises=[];data.name='Rest day';}
+  }
+ }catch(err){clear();alert('Invalid '+kind+' link: '+err.message+'. Nothing was saved.');return;}
+ if(!/^myfitness-account-.+-v2$/.test(KEY)){alert('Connect your own Google account under Settings first, then open this link again. Nothing was saved.');return;}
+ const overlay=document.createElement('div');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Review '+kind);
+ overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,38,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+ const panel=document.createElement('div');panel.style.cssText='width:min(100%,500px);max-height:90vh;overflow-y:auto;background:white;color:#162238;border-radius:20px;padding:23px;box-shadow:0 24px 64px #0005';
+ const current=kind==='routine'?state.templates.find(t=>t.name===data.name):state.workouts.find(w=>w.date===data.date&&w.name===data.name);
+ panel.append(txt('h2',kind==='routine'?'Review routine':'Review workout'),txt('p',(kind==='workout'?fmtDate(data.date)+' · ':'')+data.name+(kind==='workout'?' · '+data.status:'')));
+ if(current){const warning=txt('p','A '+kind+' with this name'+(kind==='workout'?' on this date':'')+' already exists. Saving will replace that entry only.');warning.style.cssText='color:#9a4b04;font-weight:600';panel.append(warning)}
+ const list=document.createElement('div');list.style.cssText='display:grid;gap:8px;margin:12px 0';
+ for(const e of data.exercises){const line=txt('div',e.name+' · '+e.sets+' sets × '+e.reps+(kind==='workout'&&e.weight!==null?' · '+e.weight+' kg':''));line.style.cssText='border-radius:10px;background:#f1f5f9;padding:10px';list.append(line)}
+ if(!data.exercises.length)list.append(txt('p','Rest day · No exercises'));
+ panel.append(list,txt('p','This saves into the currently connected myFitness profile. Your other entries remain unchanged.'));
+ const buttons=document.createElement('div');buttons.className='buttonrow';const cancel=txt('button','Cancel');cancel.className='btn secondary';const accept=txt('button',kind==='routine'?'Save routine':'Save workout');accept.className='btn';
+ const close=()=>{overlay.remove();clear()};cancel.onclick=close;
+ accept.onclick=()=>{
+  if(kind==='routine'){
+   try{saveTemplate({name:data.name,exercises:data.exercises},data.name)}catch(e){alert(e.message);return;}
+   jump('routines');
+  }else{
+   const record={date:data.date,name:data.name,status:data.status,notes:'Added with ChatGPT one-tap link',exercises:data.exercises};
+   const index=state.workouts.findIndex(w=>w.date===record.date&&w.name===record.name);
+   if(index>=0)state.workouts[index]=record;else state.workouts.push(record);
+   $('wDate').value=data.date;$('routineDate').value=data.date;logWeek.wlog=logIso(logMonday(data.date));$('wlogMonth').value=data.date.slice(0,7);
+   persist();jump('workouts');
+  }
+  close();
+ };
+ buttons.append(cancel,accept);panel.append(buttons);overlay.append(panel);document.body.append(overlay);accept.focus();
+}
+
+renderExercises();render();oneTapFoodImport();oneTapTrainingImport();if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
