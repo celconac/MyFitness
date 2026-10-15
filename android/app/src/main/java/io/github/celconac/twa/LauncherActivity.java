@@ -54,7 +54,9 @@ public final class LauncherActivity extends Activity {
         launchUri = safeUri(getIntent().getData());
         TextView loading = new TextView(this);
         loading.setText("Opening myFitness…"); loading.setPadding(32,64,32,32); setContentView(loading);
-        String provider = CustomTabsClient.getPackageName(this, Collections.singletonList("com.android.chrome"), false);
+        // A generic Custom Tabs browser may not implement Chrome's TWA message channel.
+        // Skip the phone's default browser; never silently fall back to Samsung Internet.
+        String provider = CustomTabsClient.getPackageName(this, Collections.singletonList("com.android.chrome"), true);
         if (provider == null) { loading.setText("Install or update Google Chrome to open myFitness."); return; }
         bound = CustomTabsClient.bindCustomTabsService(this, provider, connection);
         if (!bound) loading.setText("Could not open Chrome. Update Chrome and reopen myFitness.");
@@ -99,7 +101,9 @@ public final class LauncherActivity extends Activity {
     private final CustomTabsCallback callback = new CustomTabsCallback() {
         @Override public void onRelationshipValidationResult(int relation, Uri origin, boolean result, Bundle extras) {
             main.post(() -> {
-                if (relation == CustomTabsService.RELATION_USE_AS_ORIGIN && ORIGIN.equals(origin)) {
+                if (relation == CustomTabsService.RELATION_USE_AS_ORIGIN && origin != null
+                        && "https".equals(origin.getScheme()) && "celconac.github.io".equals(origin.getHost())
+                        && (origin.getPort() == -1 || origin.getPort() == 443)) {
                     validated = result; requestChannel();
                 }
             });
