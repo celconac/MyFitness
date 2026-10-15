@@ -3,6 +3,9 @@ package io.github.celconac.twa;
 /** Prevents requestPostMessageChannel's validation callback from reentering itself. */
 final class ChannelGate {
     private boolean validated, navigated, requested;
+    private long sessionGeneration;
+    long newSession() { disconnected(); return ++sessionGeneration; }
+    boolean isCurrent(long generation) { return generation == sessionGeneration; }
     void validated(boolean value) { validated = value; }
     void navigationStarted() { navigated = false; requested = false; }
     void navigationFinished() { navigated = true; }
