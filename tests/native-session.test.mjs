@@ -50,6 +50,21 @@ test('explicit signout survives refresh and blocks automatic authorization',asyn
  assert.equal(reopened.calls.filter(c=>c.type==='authorize').length,0);assert.equal(reopened.ctx.KEY,'myfitness-guest-v2');
  assert.equal(JSON.parse(storage.get(key('A'))).foods[0].id,'mine');
 });
+test('acknowledged logout marker cannot erase a new Android authorization on reopen',async()=>{
+ const storage=new Map([['myfitness-native-logout-v1','1']]);
+ let issueToken;
+ const h=harness({native:false,storage,authorize:()=>new Promise(resolve=>issueToken=resolve)});
+ h.ctx.MyFitnessAndroid.available=true;
+ const connecting=h.api.connect();await tick();
+ assert.equal(storage.has('myfitness-native-logout-v1'),false);
+ assert.equal(h.calls[0].type,'signout');assert.equal(h.calls[1].options.interactive,true);
+ // The old document can disappear while Google's external activity is open.
+ // A replacement page must restore the newly saved native grant, not sign it out.
+ const reopened=harness({native:true,storage,fetcher:drive('A')});await tick();
+ assert.equal(reopened.calls[0].type,'authorize');assert.equal(reopened.api.get().accountId,'A');
+ // Finish the abandoned page without performing network/account changes.
+ await h.get('gSignOut').onclick();issueToken({accessToken:'late',identity:'A'});await connecting;
+});
 test('late Android authorization after signout cannot reconnect',async()=>{
  let finish;const h=harness({native:true,authorize:()=>new Promise(r=>finish=r)});await tick();
  await h.get('gSignOut').onclick();finish({accessToken:'late-secret',identity:'A'});await tick();
