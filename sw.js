@@ -1,5 +1,22 @@
-const CACHE='myfitness-20261015-pictures-video-v3';
-const FILES=['./','./index.html','./app.js?v=20261015-pictures-video-v2','./googledrive.js?v=20261015-pictures-video-v2','./exercise-media.js?v=20261015-pictures-video-v2','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)));self.skipWaiting()});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('myfitness-')&&k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))})
+const CACHE='myfitness-20261015-native-v1';
+const FILES=['./','./index.html','./native-google.js?v=20261015-native-v1','./app.js?v=20261015-native-v1','./googledrive.js?v=20261015-native-v1','./exercise-media.js?v=20261015-native-v1','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
+self.addEventListener('install',event=>{
+ event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));
+ // Wait for old tabs to close so app.js and the sync client update together.
+});
+self.addEventListener('activate',event=>{
+ event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('myfitness-')&&key!==CACHE).map(key=>caches.delete(key)))));
+});
+self.addEventListener('fetch',event=>{
+ const url=new URL(event.request.url);
+ if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
+ const asset=FILES.some(file=>new URL(file,self.registration.scope).href===url.href);
+ if(!asset&&event.request.mode!=='navigate')return;
+ // Cache app assets only; Google requests and authorization responses never enter this cache.
+ event.respondWith(fetch(event.request).catch(async()=>{
+  const cached=await caches.match(event.request);
+  if(cached)return cached;
+  if(event.request.mode==='navigate')return caches.match(new URL('./index.html',self.registration.scope).href);
+  return Response.error();
+ }));
+});

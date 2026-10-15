@@ -1,0 +1,28 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'io.github.celconac.twa'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'io.github.celconac.twa'
+        minSdk 24
+        targetSdk 36
+        versionCode 3
+        versionName '1.1.0'
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('MYFITNESS_KEYSTORE')) {
+                storeFile file(System.getenv('MYFITNESS_KEYSTORE'))
+                storePassword System.getenv('MYFITNESS_STORE_PASSWORD')
+                keyAlias System.getenv('MYFITNESS_KEY_ALIAS')
+                keyPassword System.getenv('MYFITNESS_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation 'androidx.browser:browser:1.10.0'
+    implementation 'com.google.android.gms:play-services-auth:22.0.0'
+}

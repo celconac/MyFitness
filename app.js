@@ -12,6 +12,12 @@ const savedAccountKey=(()=>{
 })();
 let KEY=savedAccountKey||'myfitness-guest-v2';
 let editingWorkoutIndex=null, editingExercises=[];
+// Clear unsaved editors whenever account ownership changes.
+function resetAccountEditors(){
+ resetWorkoutEditor();activeRoutine=null;templateDraft=[];selectedTemplateName=null;
+ for(const id of ['templateName','templateExercise','templateReps','foodName','foodCal','foodProt','weightValue','exName','exReps','exWeight'])$(id).value='';
+ routineRender();templateRender();
+}
 const ROUTINES={
 'Chest + Biceps':[['Incline dumbbell press',4,'8-12'],['Flat dumbbell press',3,'8-12'],['Cable chest fly',3,'12-15'],['Dumbbell biceps curl',3,'10-12'],['Incline dumbbell curl',3,'10-12'],['Hammer curl',3,'12']],
 'Back + Triceps':[['Lat pulldown',4,'10-12'],['Seated cable row',3,'10-12'],['Chest-supported dumbbell row',3,'10-12'],['Rope triceps pushdown',3,'10-12'],['Overhead cable triceps extension',3,'12']],
