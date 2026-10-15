@@ -2,8 +2,15 @@
 // Reopen the last active account's offline snapshot after the APK is restarted.
 // No Drive uploads occur until Google verifies the account again.
 const LAST_ACCOUNT_KEY='myfitness-last-active-account-v2';
-const savedAccountKey=null;
-let KEY='myfitness-guest-v2';
+const savedAccountKey=(()=>{
+  try {
+    const v=localStorage.getItem(LAST_ACCOUNT_KEY);
+    return v && /^myfitness-account-.+-v2$/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+})();
+let KEY=savedAccountKey||'myfitness-guest-v2';
 let editingWorkoutIndex=null, editingExercises=[];
 const ROUTINES={
 'Chest + Biceps':[['Incline dumbbell press',4,'8-12'],['Flat dumbbell press',3,'8-12'],['Cable chest fly',3,'12-15'],['Dumbbell biceps curl',3,'10-12'],['Incline dumbbell curl',3,'10-12'],['Hammer curl',3,'12']],
