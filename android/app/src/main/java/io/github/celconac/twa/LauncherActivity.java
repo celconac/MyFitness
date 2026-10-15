@@ -10,6 +10,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.TextView;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import androidx.browser.customtabs.CustomTabsCallback;
 import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsService;
@@ -40,6 +42,7 @@ public final class LauncherActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private CustomTabsSession session;
+    private final ChannelGate channelGate = new ChannelGate();
     private boolean validated, navigated, channel, bound, authorizing;
     private long epoch;
     private String pendingId, lastToken;
@@ -47,19 +50,28 @@ public final class LauncherActivity extends Activity {
     private long pendingEpoch;
     private SharedPreferences preferences;
     private Uri launchUri;
+    private TextView nativeStatus;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         preferences = getSharedPreferences("native-google-session-v1", MODE_PRIVATE);
         launchUri = safeUri(getIntent().getData());
-        TextView loading = new TextView(this);
-        loading.setText("Opening myFitness…"); loading.setPadding(32,64,32,32); setContentView(loading);
+        LinearLayout recovery = new LinearLayout(this);
+        recovery.setOrientation(LinearLayout.VERTICAL); recovery.setPadding(32,64,32,32);
+        TextView title = new TextView(this); title.setText("myFitness"); title.setTextSize(28);
+        nativeStatus = new TextView(this); nativeStatus.setText("Opening your tracker…"); nativeStatus.setTextSize(18);
+        Button open = new Button(this); open.setText("Open MyFitness");
+        open.setOnClickListener(view -> {
+            if (session != null) { launchUri = Uri.parse(HOME); launchPage(); }
+            else nativeStatus.setText("Close and reopen MyFitness to reconnect to Chrome.");
+        });
+        recovery.addView(title); recovery.addView(nativeStatus); recovery.addView(open); setContentView(recovery);
         // A generic Custom Tabs browser may not implement Chrome's TWA message channel.
         // Skip the phone's default browser; never silently fall back to Samsung Internet.
         String provider = CustomTabsClient.getPackageName(this, Collections.singletonList("com.android.chrome"), true);
-        if (provider == null) { loading.setText("Install or update Google Chrome to open myFitness."); return; }
+        if (provider == null) { nativeStatus.setText("Install or update Google Chrome to open myFitness."); return; }
         bound = CustomTabsClient.bindCustomTabsService(this, provider, connection);
-        if (!bound) loading.setText("Could not open Chrome. Update Chrome and reopen myFitness.");
+        if (!bound) nativeStatus.setText("Could not open Chrome. Update Chrome and reopen MyFitness.");
     }
 
     private Uri safeUri(Uri uri) {
@@ -82,6 +94,7 @@ public final class LauncherActivity extends Activity {
             launchPage();
         }
         @Override public void onServiceDisconnected(ComponentName name) {
+            channelGate.disconnected();
             epoch++; channel = false; validated = false; session = null; lastToken = null;
         }
     };
@@ -94,8 +107,8 @@ public final class LauncherActivity extends Activity {
     }
 
     private void requestChannel() {
-        if (validated && navigated && session != null)
-            session.requestPostMessageChannel(ORIGIN, ORIGIN, new Bundle());
+        if (session == null || !channelGate.claimRequest()) return;
+        if (!session.requestPostMessageChannel(ORIGIN, ORIGIN, new Bundle())) channelGate.requestRejected();
     }
 
     private final CustomTabsCallback callback = new CustomTabsCallback() {
@@ -104,14 +117,14 @@ public final class LauncherActivity extends Activity {
                 if (relation == CustomTabsService.RELATION_USE_AS_ORIGIN && origin != null
                         && "https".equals(origin.getScheme()) && "celconac.github.io".equals(origin.getHost())
                         && (origin.getPort() == -1 || origin.getPort() == 443)) {
-                    validated = result; requestChannel();
+                    validated = result; channelGate.validated(result); requestChannel();
                 }
             });
         }
         @Override public void onNavigationEvent(int event, Bundle extras) {
             main.post(() -> {
-                if (event == NAVIGATION_STARTED) { epoch++; channel = false; navigated = false; authorizing = false; }
-                if (event == NAVIGATION_FINISHED) { navigated = true; requestChannel(); }
+                if (event == NAVIGATION_STARTED) { epoch++; channel = false; navigated = false; authorizing = false; channelGate.navigationStarted(); }
+                if (event == NAVIGATION_FINISHED) { navigated = true; channelGate.navigationFinished(); requestChannel(); }
             });
         }
         @Override public void onMessageChannelReady(Bundle extras) {
@@ -194,6 +207,7 @@ public final class LauncherActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != AUTH_REQUEST || !authorizing || pendingEpoch != epoch) return;
         if (resultCode != RESULT_OK) { finishError("cancelled"); return; }
+        nativeStatus.setText("Finishing your Google connection…");
         try { verify(Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data), pendingEpoch); }
         catch (Exception e) { finishError("authorization_failed"); }
     }
@@ -201,6 +215,7 @@ public final class LauncherActivity extends Activity {
     private void finishError(String code) {
         if (pendingEpoch != epoch) return;
         authorizing = false; error(pendingId, code);
+        nativeStatus.setText("Google connection paused. Open MyFitness to try again.");
     }
 
     private void verify(AuthorizationResult result, long current) {
@@ -235,6 +250,7 @@ public final class LauncherActivity extends Activity {
                         finishError("session_save_failed"); return;
                     }
                     lastToken = accessToken; authorizing = false;
+                    nativeStatus.setText("Google connected. Open MyFitness to return to your tracker.");
                     JSONObject response = new JSONObject();
                     try { response.put("accessToken", accessToken); response.put("identity", identity);
                         response.put("email", email); response.put("expiresIn", 3000);

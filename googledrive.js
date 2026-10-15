@@ -166,7 +166,7 @@ async function sync(){
 }
 let debounce;
 window.addEventListener('myfitness:changed',()=>{if(!accountId)return;clearTimeout(debounce);debounce=setTimeout(()=>sync().catch(fail),1100);});
-async function resume(){if(native()&&!token&&!localStorage.getItem(LOGOUT))await restore();else await sync();}
+async function resume(){if(native()&&!token&&!reconnectNeeded&&!localStorage.getItem(LOGOUT))await restore();else await sync();}
 window.addEventListener('online',()=>resume().catch(fail));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume().catch(fail)});
 $('gSignIn').onclick=async()=>{try{await connect()}catch(e){fail(e)}};
@@ -237,7 +237,7 @@ async function restore(interactive=false){
  }}finally{if(epoch===generation)restoring=false;}
  if(epoch===generation&&token)await sync();
 }
-window.addEventListener('myfitness:android-ready',()=>restore().catch(fail));
+window.addEventListener('myfitness:android-ready',()=>{if(!token&&!reconnectNeeded)restore().catch(fail)});
 window.addEventListener('storage',event=>{
  if(event.key===LAST_ACCOUNT_KEY&&event.newValue!==KEY||event.key===LOGOUT&&event.newValue){
   invalidate();guest();say('Account changed in another window. Reload to reconnect.');

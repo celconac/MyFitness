@@ -51,7 +51,7 @@ Use JDK 21, Gradle 8.13 and Android SDK 36. Run `gradle assembleRelease
 bundleRelease lintRelease` in this directory. Signing is read from these process
 environment variables only: `MYFITNESS_KEYSTORE`, `MYFITNESS_STORE_PASSWORD`,
 `MYFITNESS_KEY_ALIAS`, `MYFITNESS_KEY_PASSWORD`. Never commit the key or passwords.
-The release is version code 4, version name 1.1.1. The build uses the existing
+The release is version code 5, version name 1.1.2. The build uses the existing
 website icon copied to `app/src/main/res/drawable/app_icon.png`.
 
 Run `npm test` at the repository root for mocked bridge/session tests. They do
@@ -89,3 +89,5 @@ promised. Do not roll out to other internal testers until these tests pass.
 References:
 - https://developer.android.com/identity/authorization
 - https://developer.chrome.com/docs/android/post-message-twa
+
+The native ChannelGate regression test under android/tests simulates Chrome's repeated validation callback and verifies one channel request per page and correct refresh/disconnect behavior. The recovery screen provides an Open MyFitness button if Google returns to the native activity.
