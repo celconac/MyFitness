@@ -51,7 +51,7 @@ Use JDK 21, Gradle 8.13 and Android SDK 36. Run `gradle assembleRelease
 bundleRelease lintRelease` in this directory. Signing is read from these process
 environment variables only: `MYFITNESS_KEYSTORE`, `MYFITNESS_STORE_PASSWORD`,
 `MYFITNESS_KEY_ALIAS`, `MYFITNESS_KEY_PASSWORD`. Never commit the key or passwords.
-The release is version code 3, version name 1.1.0. The build uses the existing
+The release is version code 4, version name 1.1.1. The build uses the existing
 website icon copied to `app/src/main/res/drawable/app_icon.png`.
 
 Run `npm test` at the repository root for mocked bridge/session tests. They do
@@ -73,6 +73,11 @@ installation work; those require a physical device.
 - Let access expire or revoke it in Google Account settings; confirm renewed
   access or a clear Connect Google prompt, with no data loss.
 - Open a food-chat link and confirm it returns to this app for review/save.
+
+MyFitness explicitly chooses Google Chrome, independently of the default phone
+browser. Samsung Internet does not provide the channel this implementation needs.
+Local browser storage is separate: keep a JSON backup from the previous provider
+and import unsynced records only after connecting the correct Google account.
 
 The current implementation depends on a Chrome-compatible TWA message channel
 (Chrome 115+), Google Play services and the app's live bound browser session.

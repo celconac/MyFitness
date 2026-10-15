@@ -1,5 +1,5 @@
-const CACHE='myfitness-20261015-native-v1';
-const FILES=['./','./index.html','./native-google.js?v=20261015-native-v1','./app.js?v=20261015-native-v1','./googledrive.js?v=20261015-native-v1','./exercise-media.js?v=20261015-native-v1','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
+const CACHE='myfitness-20261015-native-v2';
+const FILES=['./','./index.html','./native-google.js?v=20261015-native-v2','./app.js?v=20261015-native-v2','./googledrive.js?v=20261015-native-v2','./exercise-media.js?v=20261015-native-v2','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));
  // Wait for old tabs to close so app.js and the sync client update together.
