@@ -41,3 +41,22 @@ test('new channel cancels old pending authorization',async()=>{
  const h=bridge();h.hello();const pending=h.ctx.MyFitnessAndroid.request('authorize');h.hello();
  await assert.rejects(pending,/connection changed/);
 });
+
+test('repeated connect requests share one native operation',async()=>{
+ const h=bridge();h.hello();const first=h.ctx.MyFitnessAndroid.request('authorize',{interactive:true});
+ const second=h.ctx.MyFitnessAndroid.request('authorize',{interactive:true});
+ assert.equal(first,second);assert.equal(h.sent.length,1);
+ h.port.onmessage({data:JSON.stringify({type:'myfitness-native-result',version:1,id:h.sent[0].id,error:'cancelled'})});
+ await assert.rejects(first,/cancelled/);
+});
+
+test('sign-out retires pending authorization and ignores its late result',async()=>{
+ const h=bridge();h.hello();const first=h.ctx.MyFitnessAndroid.request('authorize',{interactive:true});
+ const rejected=assert.rejects(first,/connection changed/);
+ const signout=h.ctx.MyFitnessAndroid.request('signout');
+ await rejected;
+ h.port.onmessage({data:JSON.stringify({type:'myfitness-native-result',version:1,id:h.sent[0].id,accessToken:'late'})});
+ assert.equal(h.ctx.MyFitnessAndroid.diagnostics().pending.length,1);
+ h.port.onmessage({data:JSON.stringify({type:'myfitness-native-result',version:1,id:h.sent[1].id})});
+ await signout;
+});

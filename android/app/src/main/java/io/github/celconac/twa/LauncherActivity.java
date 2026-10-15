@@ -38,15 +38,19 @@ public final class LauncherActivity extends Activity {
     private static final Uri ORIGIN = Uri.parse("https://celconac.github.io");
     private static final String HOME = "https://celconac.github.io/MyFitness/";
     private static final String DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-    private static final int AUTH_REQUEST = 6001;
+    private int authRequestCode = 6000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private CustomTabsSession session;
+    private CustomTabsClient browserClient;
     private final ChannelGate channelGate = new ChannelGate();
     private boolean validated, navigated, channel, bound, authorizing;
     private long epoch;
     private String pendingId, lastToken;
     private boolean pendingInteractive;
+    private boolean openedGoogleUi;
+    private int sendResult;
+    private String stage = "starting";
     private long pendingEpoch;
     private SharedPreferences preferences;
     private Uri launchUri;
@@ -62,10 +66,15 @@ public final class LauncherActivity extends Activity {
         nativeStatus = new TextView(this); nativeStatus.setText("Opening your tracker…"); nativeStatus.setTextSize(18);
         Button open = new Button(this); open.setText("Open MyFitness");
         open.setOnClickListener(view -> {
-            if (session != null) { launchUri = Uri.parse(HOME); launchPage(); }
+            if (browserClient != null) { launchUri = Uri.parse(HOME); launchPage(); }
             else nativeStatus.setText("Close and reopen MyFitness to reconnect to Chrome.");
         });
         recovery.addView(title); recovery.addView(nativeStatus); recovery.addView(open); setContentView(recovery);
+        Button details = new Button(this); details.setText("Connection details");
+        details.setOnClickListener(view -> nativeStatus.setText("Android 1.1.3\nStage: " + stage
+            + "\nVerified channel: " + (validated && channel) + "\nLast delivery result: " + sendResult
+            + "\nSaved connection: " + preferences.getBoolean("enabled", false)));
+        recovery.addView(details);
         // A generic Custom Tabs browser may not implement Chrome's TWA message channel.
         // Skip the phone's default browser; never silently fall back to Samsung Internet.
         String provider = CustomTabsClient.getPackageName(this, Collections.singletonList("com.android.chrome"), true);
@@ -83,25 +92,34 @@ public final class LauncherActivity extends Activity {
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent); setIntent(intent); launchUri = safeUri(intent.getData());
-        if (session != null) launchPage();
+        if (browserClient != null) launchPage();
     }
 
     private final CustomTabsServiceConnection connection = new CustomTabsServiceConnection() {
         @Override public void onCustomTabsServiceConnected(ComponentName name, CustomTabsClient client) {
-            client.warmup(0L); session = client.newSession(callback);
-            if (session == null) return;
-            session.validateRelationship(CustomTabsService.RELATION_USE_AS_ORIGIN, ORIGIN, null);
+            browserClient = client; client.warmup(0L);
             launchPage();
         }
         @Override public void onServiceDisconnected(ComponentName name) {
-            channelGate.disconnected();
-            epoch++; channel = false; validated = false; session = null; lastToken = null;
+            channelGate.newSession();
+            epoch++; authorizing = false; channel = false; validated = false; session = null; browserClient = null; lastToken = null;
         }
     };
 
     private void launchPage() {
+        if (browserClient == null) return;
+        // Chrome may dispose the old session when the Google chooser returns to this activity.
+        // A new tracker must own a new session; old callbacks cannot affect its port or grant.
+        epoch++; authorizing = false; channel = false; validated = false; navigated = false;
+        long sessionGeneration = channelGate.newSession();
+        session = browserClient.newSession(callbackFor(sessionGeneration));
+        if (session == null) { nativeStatus.setText("Could not connect to Chrome. Reopen MyFitness."); return; }
+        stage = "opening tracker";
+        session.validateRelationship(CustomTabsService.RELATION_USE_AS_ORIGIN, ORIGIN, null);
         Uri page = launchUri.getQueryParameter("androidSession") == null
             ? launchUri.buildUpon().appendQueryParameter("androidSession", "1").build() : launchUri;
+        // Force a document navigation even when Chrome still has the previous HOME tab.
+        page = page.buildUpon().appendQueryParameter("androidLaunch", Long.toString(android.os.SystemClock.elapsedRealtime())).build();
         new TrustedWebActivityIntentBuilder(page).build(session).launchTrustedWebActivity(this);
         // Keep this activity/service connection alive behind Chrome for subsequent refreshes.
     }
@@ -111,9 +129,10 @@ public final class LauncherActivity extends Activity {
         if (!session.requestPostMessageChannel(ORIGIN, ORIGIN, new Bundle())) channelGate.requestRejected();
     }
 
-    private final CustomTabsCallback callback = new CustomTabsCallback() {
+    private CustomTabsCallback callbackFor(long sessionGeneration) { return new CustomTabsCallback() {
         @Override public void onRelationshipValidationResult(int relation, Uri origin, boolean result, Bundle extras) {
             main.post(() -> {
+                if (!channelGate.isCurrent(sessionGeneration)) return;
                 if (relation == CustomTabsService.RELATION_USE_AS_ORIGIN && origin != null
                         && "https".equals(origin.getScheme()) && "celconac.github.io".equals(origin.getHost())
                         && (origin.getPort() == -1 || origin.getPort() == 443)) {
@@ -123,26 +142,29 @@ public final class LauncherActivity extends Activity {
         }
         @Override public void onNavigationEvent(int event, Bundle extras) {
             main.post(() -> {
+                if (!channelGate.isCurrent(sessionGeneration)) return;
                 if (event == NAVIGATION_STARTED) { epoch++; channel = false; navigated = false; authorizing = false; channelGate.navigationStarted(); }
                 if (event == NAVIGATION_FINISHED) { navigated = true; channelGate.navigationFinished(); requestChannel(); }
             });
         }
         @Override public void onMessageChannelReady(Bundle extras) {
             main.post(() -> {
+                if (!channelGate.isCurrent(sessionGeneration)) return;
                 if (!validated) return;
-                channel = true;
+                channel = true; stage = "tracker channel ready";
                 send(new JSONObject(), "myfitness-native-ready", "");
             });
         }
         @Override public void onPostMessage(String message, Bundle extras) {
-            main.post(() -> receive(message));
+            main.post(() -> { if (channelGate.isCurrent(sessionGeneration)) receive(message); });
         }
-    };
+    }; }
 
     private void send(JSONObject response, String type, String id) {
-        if (!channel || !validated || session == null) return;
+        if (!channel || !validated || session == null) { stage = "reply waiting for tracker"; return; }
         try { response.put("type", type); response.put("id", id); response.put("version", 1);
-            session.postMessage(response.toString(), null);
+            sendResult = session.postMessage(response.toString(), null);
+            stage = sendResult == CustomTabsService.RESULT_SUCCESS ? "reply delivered" : "reply delivery failed";
         } catch (Exception ignored) { /* Never log messages: authorization responses contain tokens. */ }
     }
 
@@ -170,7 +192,8 @@ public final class LauncherActivity extends Activity {
                     boolean interactive = request.optBoolean("interactive", false);
                     if (!interactive && !preferences.getBoolean("enabled", false)) { error(id, "signed_out"); return; }
                     if (authorizing) { error(id, "busy"); return; }
-                    authorizing = true; pendingId = id; pendingInteractive = interactive; pendingEpoch = epoch;
+                    epoch++; authorizing = true; pendingId = id; pendingInteractive = interactive; pendingEpoch = epoch; openedGoogleUi = false;
+                    stage = interactive ? "selecting Google account" : "restoring saved Google account";
                     final long operationEpoch = epoch;
                     if (request.optBoolean("invalidate", false) && lastToken != null) {
                         String invalid = lastToken; lastToken = null;
@@ -196,7 +219,8 @@ public final class LauncherActivity extends Activity {
                 if (current != epoch || !authorizing) return;
                 if (result.hasResolution()) {
                     if (!pendingInteractive) { finishError("interaction_required"); return; }
-                    try { startIntentSenderForResult(result.getPendingIntent().getIntentSender(), AUTH_REQUEST, null, 0, 0, 0); }
+                    try { openedGoogleUi = true; authRequestCode = authRequestCode == 65534 ? 6001 : authRequestCode + 1;
+                        startIntentSenderForResult(result.getPendingIntent().getIntentSender(), authRequestCode, null, 0, 0, 0); }
                     catch (Exception e) { finishError("interaction_required"); }
                 } else verify(result, current);
             })
@@ -205,7 +229,7 @@ public final class LauncherActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != AUTH_REQUEST || !authorizing || pendingEpoch != epoch) return;
+        if (requestCode != authRequestCode || !authorizing || pendingEpoch != epoch) return;
         if (resultCode != RESULT_OK) { finishError("cancelled"); return; }
         nativeStatus.setText("Finishing your Google connection…");
         try { verify(Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data), pendingEpoch); }
@@ -250,7 +274,10 @@ public final class LauncherActivity extends Activity {
                         finishError("session_save_failed"); return;
                     }
                     lastToken = accessToken; authorizing = false;
-                    nativeStatus.setText("Google connected. Open MyFitness to return to your tracker.");
+                    nativeStatus.setText("Google connected. Opening your tracker…");
+                    // Persisted opt-in is already verified. Restore through a fresh page/session
+                    // after external Google UI, rather than replying only to the hidden old tab.
+                    if (openedGoogleUi) { launchUri = Uri.parse(HOME); launchPage(); return; }
                     JSONObject response = new JSONObject();
                     try { response.put("accessToken", accessToken); response.put("identity", identity);
                         response.put("email", email); response.put("expiresIn", 3000);
@@ -263,6 +290,7 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        channelGate.newSession();
         epoch++; channel = false; lastToken = null;
         if (bound) unbindService(connection);
         network.shutdownNow(); super.onDestroy();
