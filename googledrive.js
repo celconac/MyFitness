@@ -241,18 +241,6 @@ async function restore(interactive=false){
  if(epoch===generation&&token)await sync();
 }
 window.addEventListener('myfitness:android-ready',()=>{if(!token&&!reconnectNeeded)restore().catch(fail)});
-// Explicit troubleshooting panel: counters and booleans only; never account data or tokens.
-if(typeof document.createElement==='function'&&$('gStatus')?.parentNode){
- const button=document.createElement('button'),output=document.createElement('pre');
- button.type='button';button.className='btn secondary';button.textContent='Connection details';
- output.hidden=true;output.style.cssText='white-space:pre-wrap;font-size:13px;overflow-wrap:anywhere';
- button.onclick=()=>{
-  output.hidden=false;
-  const info=window.MyFitnessAndroid?.diagnostics?.()||{channel:'unavailable'};
-  output.textContent=JSON.stringify({...info,logoutPending:!!localStorage.getItem(LOGOUT),accessInMemory:!!token,accountVerified:!!accountId,restoring,connecting,reconnectNeeded},null,2);
- };
- $('gStatus').parentNode.append(button,output);
-}
 window.addEventListener('storage',event=>{
  if(event.key===LAST_ACCOUNT_KEY&&event.newValue!==KEY||event.key===LOGOUT&&event.newValue){
   invalidate();guest();say('Account changed in another window. Reload to reconnect.');
